@@ -13,3 +13,5 @@ To download and extract clips from both datasets run the following from this dir
 * `python extract_clips.py --labels fluencybank_labels.csv --wavs [DATA_DIR] --clips [CLIP_DIR]`
 
 The raw SEP-28k wav files are 32 Gb and clipped SEP-28k wav files are 2.6 Gb. 
+
+You should be able to use the individual csv files for T/D/E seperately to extract them into their own DIR
