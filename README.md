@@ -7,7 +7,7 @@ There are two scripts used to download the raw audio files and extract into clip
 
 To download and extract clips from both datasets run the following from this directory
 
-* `python download_audio.py --episodes SEP-28k_episodes.csv --wavs [WAV_DIR]`
+* `python download_audio.py --episodes SEP-28k-Extended_clips.csv --wavs [WAV_DIR]`
 * `python extract_clips.py --labels SEP-28k_labels.csv --wavs [DATA_DIR] --clips [CLIP_DIR]`
 * `python download_audio.py --episodes fluencybank_episodes.csv --wavs [WAV_DIR]`
 * `python extract_clips.py --labels fluencybank_labels.csv --wavs [DATA_DIR] --clips [CLIP_DIR]`
