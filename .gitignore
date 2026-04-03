@@ -1,0 +1,15 @@
+# SEP-28k audio (large); keep directory placeholders
+data/sep28k/wavs/*
+!data/sep28k/wavs/.gitkeep
+data/sep28k/clips/*
+!data/sep28k/clips/.gitkeep
+
+# Training checkpoints (large)
+checkpoints/
+checkpoints_test/
+
+# Local / tooling
+__pycache__/
+*.pyc
+.DS_Store
+*.log

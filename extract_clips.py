@@ -20,12 +20,12 @@ from scipy.io import wavfile
 import argparse
 
 parser = argparse.ArgumentParser(description='Extract clips from SEP-28k or FluencyBank.')
-parser.add_argument('--labels', type=str, required=True,
-                   help='Path to the labels csv files (e.g., SEP-28k_labels.csv)')
-parser.add_argument('--wavs', type=str, default="wavs",
-                   help='Path where audio files from download_audio.py are saved')
-parser.add_argument('--clips', type=str, default="clips",
-                   help='Path where clips should be extracted')
+parser.add_argument('--labels', type=str, default='SEP-28k-Extended_clips.csv',
+                   help='Clip CSV with Start_5_sec / Stop_5_sec (default: SEP-28k-Extended_clips.csv)')
+parser.add_argument('--wavs', type=str, default='data/sep28k/wavs',
+                   help='Directory of full-episode .wav files from download_audio.py')
+parser.add_argument('--clips', type=str, default='data/sep28k/clips',
+                   help='Output directory for 5 s clip .wav files (default: data/sep28k/clips)')
 parser.add_argument("--progress", action="store_true",
                     help="Show progress")
 
@@ -35,8 +35,8 @@ data_dir = args.wavs
 output_dir = args.clips
 
 
-# Load label/clip file
-data = pd.read_csv(label_file, dtype={"EpId":str})
+# Load label/clip file (SEP-28k Extended uses the same Show / EpId / ClipId / Start_5_sec / Stop_5_sec layout)
+data = pd.read_csv(label_file, dtype={"EpId": str, "ClipId": str})
 
 # Get label columns from data file
 shows = data.Show
