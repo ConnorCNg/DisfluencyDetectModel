@@ -7,6 +7,7 @@ data/sep28k/clips/*
 # Training checkpoints (large)
 checkpoints/
 checkpoints_test/
+checkpoints_*/
 
 # Reference PDFs / literature (local copies)
 studies/
