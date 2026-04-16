@@ -8,6 +8,9 @@ data/sep28k/clips/*
 checkpoints/
 checkpoints_test/
 
+# Reference PDFs / literature (local copies)
+studies/
+
 # Local / tooling
 __pycache__/
 *.pyc

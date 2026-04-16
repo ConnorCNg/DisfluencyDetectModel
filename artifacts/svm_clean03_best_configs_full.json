@@ -1,0 +1,76 @@
+{
+  "split_column": "SEP28k-T",
+  "protocol": "clean_0_vs_3_per_head",
+  "layers": [
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ],
+  "c_grid": [
+    0.1,
+    1.0,
+    3.0,
+    10.0,
+    30.0
+  ],
+  "prosody_dim": 9,
+  "results": {
+    "Prolongation": {
+      "layer": 6,
+      "C": 1.0,
+      "threshold": -0.331200215238227,
+      "dev_f1": 0.4449438202247191,
+      "test_f1": 0.4281150159744409,
+      "test_precision": 0.37222222222222223,
+      "test_recall": 0.5037593984962406,
+      "n_train": 4815,
+      "n_dev": 4663,
+      "n_test": 10943,
+      "feature_dim": 777
+    },
+    "Repetition": {
+      "layer": 8,
+      "C": 10.0,
+      "threshold": -0.3179364893918501,
+      "dev_f1": 0.528395061728395,
+      "test_f1": 0.4057860677578987,
+      "test_precision": 0.39162380602498165,
+      "test_recall": 0.42101105845181674,
+      "n_train": 5240,
+      "n_dev": 4994,
+      "n_test": 11686,
+      "feature_dim": 777
+    },
+    "Interjection": {
+      "layer": 8,
+      "C": 3.0,
+      "threshold": -0.2913370507145623,
+      "dev_f1": 0.6453900709219859,
+      "test_f1": 0.629352137505509,
+      "test_precision": 0.5633136094674556,
+      "test_recall": 0.7129306040938592,
+      "n_train": 5122,
+      "n_dev": 5028,
+      "n_test": 11747,
+      "feature_dim": 777
+    },
+    "Block": {
+      "layer": 7,
+      "C": 0.1,
+      "threshold": 0.2337092864984289,
+      "dev_f1": 0.25733634311512416,
+      "test_f1": 0.19226519337016573,
+      "test_precision": 0.1407766990291262,
+      "test_recall": 0.30313588850174217,
+      "n_train": 3816,
+      "n_dev": 3744,
+      "n_test": 9175,
+      "feature_dim": 777
+    }
+  }
+}

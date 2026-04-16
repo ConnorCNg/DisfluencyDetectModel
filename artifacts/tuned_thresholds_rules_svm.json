@@ -1,0 +1,29 @@
+{
+  "split_column": "SEP28k-T",
+  "label_vote_threshold": 2,
+  "seed": 42,
+  "heads": [
+    "Prolongation",
+    "Repetition",
+    "Interjection",
+    "Block"
+  ],
+  "svm_score_thresholds": {
+    "Prolongation": -0.486,
+    "Repetition": -0.319,
+    "Interjection": -0.362,
+    "Block": -0.567
+  },
+  "rules_zhang_prob_thresholds": {
+    "Prolongation": 0.925,
+    "Repetition": 0.425,
+    "Interjection": 0.05,
+    "Block": 0.05
+  },
+  "rules_zhang_full_prob_thresholds": {
+    "Prolongation": 0.925,
+    "Repetition": 0.425,
+    "Interjection": 0.05,
+    "Block": 0.05
+  }
+}

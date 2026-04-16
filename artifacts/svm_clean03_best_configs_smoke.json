@@ -1,0 +1,65 @@
+{
+  "split_column": "SEP28k-T",
+  "protocol": "clean_0_vs_3_per_head",
+  "layers": [
+    5
+  ],
+  "c_grid": [
+    1.0
+  ],
+  "prosody_dim": 9,
+  "results": {
+    "Prolongation": {
+      "layer": 5,
+      "C": 1.0,
+      "threshold": -0.4048568031502839,
+      "dev_f1": 0.40643863179074446,
+      "test_f1": 0.3654618473895582,
+      "test_precision": 0.304857621440536,
+      "test_recall": 0.45614035087719296,
+      "n_train": 4815,
+      "n_dev": 4663,
+      "n_test": 10943,
+      "feature_dim": 777
+    },
+    "Repetition": {
+      "layer": 5,
+      "C": 1.0,
+      "threshold": -0.09275036563865541,
+      "dev_f1": 0.4692513368983957,
+      "test_f1": 0.35884722652618534,
+      "test_precision": 0.295257521672616,
+      "test_recall": 0.45734597156398105,
+      "n_train": 5240,
+      "n_dev": 4994,
+      "n_test": 11686,
+      "feature_dim": 777
+    },
+    "Interjection": {
+      "layer": 5,
+      "C": 1.0,
+      "threshold": -0.03774889212175558,
+      "dev_f1": 0.5929078014184397,
+      "test_f1": 0.5814822960193534,
+      "test_precision": 0.5196540880503144,
+      "test_recall": 0.6600099850224663,
+      "n_train": 5122,
+      "n_dev": 5028,
+      "n_test": 11747,
+      "feature_dim": 777
+    },
+    "Block": {
+      "layer": 5,
+      "C": 1.0,
+      "threshold": -0.6588923762612909,
+      "dev_f1": 0.1986455981941309,
+      "test_f1": 0.12415349887133183,
+      "test_precision": 0.09181969949916527,
+      "test_recall": 0.1916376306620209,
+      "n_train": 3816,
+      "n_dev": 3744,
+      "n_test": 9175,
+      "feature_dim": 777
+    }
+  }
+}
