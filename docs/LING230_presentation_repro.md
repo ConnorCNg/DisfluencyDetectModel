@@ -10,6 +10,14 @@ Reproduce the **presentation** (SEP-28k, 2-of-3 vote positives, rules vs Wav2Vec
 cd /path/to/DisfluencyDetectModel
 ```
 
+**Quick smoke test (small subsamples, ~1–2 minutes on a warm cache):**
+
+```bash
+bash scripts/smoke_ling230_pipelines.sh
+```
+
+Optional env: `SMOKE_SPLIT_CAP` (default **256**; smaller caps can fail SVM fit when a head has no positives in train), `SMOKE_DEVICE`, `SMOKE_OUT_DIR` (default `artifacts/smoke/`).
+
 ---
 
 ## 0) What to install; what not to commit
@@ -283,13 +291,3 @@ python3 -u disfluency_pipeline.py --mode train --device auto \
 Optional repeat runs: add e.g. `--audio-feature-cache-dir .cache/bilstm_audio_features` to reuse frozen features.
 
 ---
-
-## 10) Out of scope for this document
-
-Cross-head error scripts, snapshot bundles, block ablation sweeps, and large `*detail.json` dumps — omit from a minimal reviewer branch unless you explicitly want them.
-
----
-
-## 11) Presentation PDF
-
-Local reference only (not in Git); filename on disk: **LING-230 Presentation.pdf**.
