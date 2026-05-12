@@ -29,6 +29,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 import torch
 
+from disfluency_pipeline import assert_sep28k_extended_dysfluency_csv
 from paper_style_w2v2_svm_test import ClipRecord, extract_embeddings
 
 
@@ -65,6 +66,7 @@ def _target_vote(v: Dict[str, int], head: str) -> int:
 
 
 def load_rows(csv_path: str, data_root: str, split_column: str) -> List[RowRec]:
+    assert_sep28k_extended_dysfluency_csv(csv_path)
     out: List[RowRec] = []
     with open(csv_path, "r", newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):

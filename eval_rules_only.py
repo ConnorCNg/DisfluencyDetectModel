@@ -47,7 +47,9 @@ from disfluency_pipeline import (
     Config,
     DisfluencyDataset,
     F1_CLASS_NAMES,
+    SEP28K_EXTENDED_CLIPS_CSV,
     _apply_max_clips,
+    assert_sep28k_extended_dysfluency_csv,
     build_split_lists,
     collate_batch,
     compute_f1_metrics,
@@ -110,7 +112,22 @@ def main() -> None:
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     ap.add_argument("--split-column", default="SEP28k-T")
-    ap.add_argument("--label-vote-threshold", type=int, default=2)
+    ap.add_argument(
+        "--data-root",
+        default="",
+        help="Clip WAV root (default: Config.data_root, usually data/sep28k/clips).",
+    )
+    ap.add_argument(
+        "--label-csv",
+        default=SEP28K_EXTENDED_CLIPS_CSV,
+        help="Must be SEP-28k-Extended_clips.csv (per-clip dysfluency vote columns).",
+    )
+    ap.add_argument(
+        "--label-vote-threshold",
+        type=int,
+        default=3,
+        help="Mark dysfluency present when SEP-28k-Extended vote count >= this (3 = unanimous).",
+    )
     ap.add_argument("--f1-threshold", type=float, default=0.5)
     ap.add_argument(
         "--zhang-full-cache-dir",
@@ -139,9 +156,13 @@ def main() -> None:
     else:
         dev = torch.device(args.device)
 
+    assert_sep28k_extended_dysfluency_csv(args.label_csv)
     cfg = Config()
+    cfg.label_csv = args.label_csv
     cfg.split_column = args.split_column
     cfg.label_vote_threshold = max(0, int(args.label_vote_threshold))
+    if (args.data_root or "").strip():
+        cfg.data_root = (args.data_root or "").strip()
 
     loader = _split_loader(cfg, args.split, args.max_clips, args.batch_size)
     rule_mod = build_rules(

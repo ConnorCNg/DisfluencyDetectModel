@@ -6,6 +6,8 @@ import os
 import random
 
 import librosa as lr
+
+from disfluency_pipeline import assert_sep28k_extended_dysfluency_csv
 import matplotlib.pyplot as pp
 import numpy as np
 import scipy as sp
@@ -97,6 +99,7 @@ def main():
         help="If >=0, plot that test item while evaluating.",
     )
     args = ap.parse_args()
+    assert_sep28k_extended_dysfluency_csv(args.csv)
 
     positives = []
     negatives = []

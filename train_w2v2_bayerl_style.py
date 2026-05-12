@@ -127,7 +127,12 @@ def main() -> None:
     ap.add_argument("--csv", default="SEP-28k-Extended_clips.csv")
     ap.add_argument("--data-root", default="data/sep28k/clips")
     ap.add_argument("--split-column", default="SEP28k-T")
-    ap.add_argument("--label-vote-threshold", type=int, default=2)
+    ap.add_argument(
+        "--label-vote-threshold",
+        type=int,
+        default=3,
+        help="SEP-28k-Extended: present when vote count >= this (3 = unanimous).",
+    )
     ap.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     ap.add_argument("--model-name", default="facebook/wav2vec2-base-960h")
     ap.add_argument("--batch-size", type=int, default=4)

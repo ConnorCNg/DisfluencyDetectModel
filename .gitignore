@@ -17,3 +17,18 @@ __pycache__/
 *.pyc
 .DS_Store
 *.log
+
+# Heavy derived caches (regenerate: see artifacts/REGENERATE_CACHES.txt)
+.cache/
+
+# Local smoke-test outputs (bash scripts/smoke_ling230_pipelines.sh)
+artifacts/smoke/
+
+# 3 s clip tree (large); same pattern as sep28k/clips
+data/SEP-28k_CLIP/
+
+# Ad-hoc PID files from background runs
+*.pid
+
+# Optional local copy of HF hub snapshot (not tracked; use default HF cache instead)
+artifacts/huggingface_hub/

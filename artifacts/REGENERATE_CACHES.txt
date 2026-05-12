@@ -1,0 +1,39 @@
+Regenerate Hugging Face model cache and project .cache (embeddings + prosody)
+==============================================================================
+
+These are created automatically the first time you run compare/tune with the
+same defaults as in paper_style_w2v2_svm_test.py (Wav2Vec2 + prosody). They are
+gitignored because they are large (many small .npy files).
+
+1) Wav2Vec2 weights (facebook/wav2vec2-base-960h)
+   - Easiest: from repo root, run:
+
+       bash scripts/regenerate_hf_and_caches.sh
+
+   - Or one-liner (downloads into the usual Hugging Face cache, typically
+     ~/.cache/huggingface/hub):
+
+       python3 -c "from transformers import Wav2Vec2Model; Wav2Vec2Model.from_pretrained('facebook/wav2vec2-base-960h')"
+
+   - Requires: pip install transformers torch (and torchaudio/soundfile as in your env).
+
+2) Project .cache/w2v2_embeddings/ and .cache/prosody_features/
+   - Populated when you extract features for clips, e.g. full compare:
+
+       python3 -u compare_rules_svm_hybrid.py --device auto --seed 42 \\
+         --max-train 0 --max-test 0 \\
+         --thresholds-json artifacts/tuned_thresholds_rules_svm.json
+
+   - Or tune_thresholds_rules_svm.py with the same CSV/data-root/split-column.
+
+3) Optional: Hugging Face CLI instead of Python
+
+       pip install huggingface_hub
+       huggingface-cli download facebook/wav2vec2-base-960h
+
+Nothing under .cache/ or artifacts/huggingface_hub/ should be committed to git.
+
+Reproduce a saved compare run (after caches + HF weights exist):
+  - Each run under artifacts/snapshots/<id>/ has run_command.txt and REPRODUCE_COMPARE.sh
+    (from scripts/snapshot_rules_svm_compare.py). From repo root:
+      bash artifacts/snapshots/<id>/REPRODUCE_COMPARE.sh

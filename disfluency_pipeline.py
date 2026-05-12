@@ -1,7 +1,8 @@
 """
 Disfluency pipeline: 5 s clips → wav2vec2 + MFCC → BiLSTM → 4 heads.
 
-SEP-28k: clips under data/sep28k/clips; labels in SEP-28k-Extended_clips.csv.
+SEP-28k: clips under data/sep28k/clips; dysfluency votes only from SEP-28k-Extended_clips.csv
+(not SEP-28k_episodes.csv, which is for URLs/downloads).
 Splits: column SEP28k-T or SEP28k-D (values: train / dev / test). dev → validation.
 """
 
@@ -78,9 +79,10 @@ class Config:
 
     # Binary prediction threshold for F1 (sigmoid prob >= threshold → positive)
     f1_threshold: float = 0.5
-    # CSV vote threshold for positives in SEP-28k-Extended labels.
-    # Example: 2 means values 2 or 3 are positive; 0 or 1 are negative.
-    label_vote_threshold: int = 2
+    # SEP-28k-Extended: each dysfluency column is an integer vote count in {0,1,2,3} from
+    # three annotators. Positive when count >= label_vote_threshold; use 3 for strict
+    # unanimous positives only (aligns with "0 vs 3" cleanness on the vote scale).
+    label_vote_threshold: int = 3
 
     # Stacking-style logit fusion (rule logits detached; no gradients into rules).
     # "none" = identical to backbone-only training/inference.
@@ -99,6 +101,25 @@ class Config:
 
 
 CFG = Config()
+
+# Official per-clip annotator vote table (Show, EpId, ClipId, dysfluency columns, splits).
+SEP28K_EXTENDED_CLIPS_CSV = "SEP-28k-Extended_clips.csv"
+
+
+def assert_sep28k_extended_dysfluency_csv(csv_path: str) -> None:
+    """
+    Enforce that SEP-28k dysfluency annotations are read from the Extended clips CSV only.
+
+    ``SEP-28k_episodes.csv`` is for downloads only; it does not carry per-clip dysfluency votes.
+    """
+    name = os.path.basename(os.path.normpath(csv_path))
+    if name != SEP28K_EXTENDED_CLIPS_CSV:
+        raise ValueError(
+            f"Dysfluency labels must be loaded from {SEP28K_EXTENDED_CLIPS_CSV!r} "
+            f"(got filename {name!r} from path {csv_path!r}). "
+            "SEP-28k-Extended_clips.csv has Prolongation, Block, SoundRep, WordRep, Interjection, "
+            "and split columns SEP28k-T / SEP28k-D."
+        )
 
 
 def _print_device_info(device: torch.device) -> None:
@@ -141,6 +162,18 @@ F1_PRESENCE_KEY = "presence"
 
 
 def row_to_label_vector(row: pd.Series, cfg: Config) -> np.ndarray:
+    """
+    Build the 4-head training label vector for SEP-28k-Extended (same order as F1_CLASS_NAMES).
+
+    Per-head vote columns (0–3 annotator counts):
+    - Prolongation ← ``Prolongation``
+    - Repetition ← ``max(SoundRep, WordRep)`` (two columns, one repetition head)
+    - Interjection ← ``Interjection``
+    - Block ← ``Block``
+
+    Each head is binarized with ``cfg.label_vote_threshold`` (default 3 = positive only
+    when all three annotators agreed).
+    """
     if cfg.label_source == "sep28k_extended":
         thr = float(cfg.label_vote_threshold)
         p = 1.0 if float(row["Prolongation"]) >= thr else 0.0
@@ -176,6 +209,8 @@ def build_split_lists(cfg: Config) -> Tuple[
     int,
 ]:
     """Paths + labels per split from CSV; only rows with an existing clip file."""
+    if cfg.label_source == "sep28k_extended":
+        assert_sep28k_extended_dysfluency_csv(cfg.label_csv)
     df = pd.read_csv(cfg.label_csv, dtype={"EpId": str, "ClipId": str})
     if cfg.split_column not in df.columns:
         raise ValueError(
@@ -1162,8 +1197,14 @@ def main() -> None:
     p.add_argument(
         "--label-vote-threshold",
         type=int,
-        default=2,
-        help="SEP-28k-Extended: minimum vote count to mark a dysfluency as present.",
+        default=3,
+        help="SEP-28k-Extended: mark dysfluency present when vote count >= this (3 = unanimous).",
+    )
+    p.add_argument(
+        "--data-root",
+        type=str,
+        default="",
+        help="Override clip WAV root (default: Config.data_root, usually data/sep28k/clips).",
     )
     p.add_argument(
         "--device",
@@ -1215,6 +1256,8 @@ def main() -> None:
     cfg.split_column = args.split_column
     cfg.f1_threshold = args.f1_threshold
     cfg.label_vote_threshold = max(0, int(args.label_vote_threshold))
+    if (args.data_root or "").strip():
+        cfg.data_root = (args.data_root or "").strip()
     cfg.audio_feature_cache_dir = args.audio_feature_cache_dir or ""
     if args.mode == "demo":
         cfg.max_clips = args.max_clips

@@ -1,5 +1,9 @@
 # DisfluencyDetectModel
 
+**LING-230 / study reproduction (narrow scope):** see [`docs/LING230_presentation_repro.md`](docs/LING230_presentation_repro.md) for copy-paste commands covering rules + SVM (with caches), strict four-head + learned Block, old layer-8 SVM + learned Block, matched 5s vs 3s, block-only base vs pause-learned, **`eval_rules_only.py`** (rules without neural/SVM), and **`disfluency_pipeline.py --mode train`** (BiLSTM baseline). That doc standardizes **`--label-vote-threshold 2`** (2-of-3 positives) on every step.
+
+---
+
 ## Downloading & processing audio
 
 You need **Python 3** with **NumPy** (`download_audio.py`) and **pandas + scipy** (`extract_clips.py`). Install once:

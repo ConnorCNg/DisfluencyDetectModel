@@ -4,11 +4,15 @@ Tune rule and SVM thresholds on dev, then evaluate test.
 
 Protocol:
 - Labels/splits from disfluency_pipeline (4 heads, SEP28k-T by default).
-- Train SVM on train split only.
+- Train SVM on train split only (by default: per-head W2V2 layer + prosody from the
+  layer-sweep JSON, same as Bayer-style compare_rules_svm_hybrid). Training rows
+  are undersampled per head to 50% positive / 50% negative (match minority count).
 - Tune per-head thresholds on dev:
   - Rules: threshold over sigmoid probs in [0.05..0.95]
   - SVM: threshold over decision_function scores (quantile grid from dev scores)
 - Report test metrics with tuned thresholds.
+- Writes JSON including ``split_column``, ``metrics_evaluated_on_split`` (``test``),
+  ``seed`` / ``subsample_seeds``, SVM balance flags, and a ``test_metrics_tuned_thresholds`` snapshot.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import argparse
 import json
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -37,9 +41,15 @@ from disfluency_pipeline import (
     compute_f1_metrics,
     format_f1_metrics,
 )
-from paper_style_w2v2_svm_test import ClipRecord, extract_embeddings
+from paper_style_w2v2_svm_test import (
+    ClipRecord,
+    extract_embeddings,
+    extract_per_head_w2v2_prosody,
+    load_svm_clean03_head_bundle,
+)
 from zhang_full.rule_module import ZhangFullRuleLogits
-from zhang_rules import ZhangStyleRuleLogits
+
+DEFAULT_SVM_HEAD_JSON = "artifacts/svm_clean03_best_configs_full.json"
 
 
 def _pick_device(which: str) -> torch.device:
@@ -102,22 +112,88 @@ class SVMHead:
     pipe: object
 
 
-def _fit_svm_heads(x_tr: np.ndarray, y_tr: np.ndarray) -> List[SVMHead]:
+def _balanced_row_indices_y_bin(y_col: np.ndarray, seed: int) -> np.ndarray:
+    """Undersample to min(n_pos, n_neg) of each class; if a class is empty, use all rows."""
+    y_col = np.asarray(y_col, dtype=np.int32).reshape(-1)
+    pos = np.flatnonzero(y_col == 1)
+    neg = np.flatnonzero(y_col == 0)
+    if pos.size == 0 or neg.size == 0:
+        return np.arange(y_col.shape[0], dtype=np.int64)
+    n = int(min(pos.size, neg.size))
+    rng = np.random.default_rng(int(seed))
+    pos_take = rng.choice(pos, size=n, replace=False)
+    neg_take = rng.choice(neg, size=n, replace=False)
+    out = np.concatenate([pos_take, neg_take])
+    rng.shuffle(out)
+    return out.astype(np.int64)
+
+
+def _fit_svm_heads(
+    x_tr: Union[np.ndarray, List[np.ndarray]],
+    y_tr: np.ndarray,
+    c_per_head: Optional[List[float]] = None,
+    *,
+    balance_train: bool = True,
+    balance_seed: int = 0,
+) -> List[SVMHead]:
     heads: List[SVMHead] = []
-    for i in range(y_tr.shape[1]):
+    n = y_tr.shape[1]
+    if isinstance(x_tr, list):
+        for i in range(n):
+            c = float(c_per_head[i]) if c_per_head is not None else 10.0
+            yi = (y_tr[:, i] > 0.5).astype(np.int32)
+            if balance_train:
+                idx = _balanced_row_indices_y_bin(yi, balance_seed + 100_003 * i)
+                xi = x_tr[i][idx]
+                yi_fit = yi[idx]
+                print(
+                    f"  [SVM train balanced] {F1_CLASS_NAMES[i]}: n={len(idx)} "
+                    f"pos={int(yi_fit.sum())} neg={int(len(yi_fit) - yi_fit.sum())}",
+                    flush=True,
+                )
+            else:
+                xi = x_tr[i]
+                yi_fit = yi
+            p = make_pipeline(
+                StandardScaler(),
+                SVC(kernel="rbf", C=c, gamma="scale", class_weight="balanced"),
+            )
+            p.fit(xi, yi_fit)
+            heads.append(SVMHead(pipe=p))
+        return heads
+    for i in range(n):
+        c = float(c_per_head[i]) if c_per_head is not None else 10.0
+        yi = (y_tr[:, i] > 0.5).astype(np.int32)
+        if balance_train:
+            idx = _balanced_row_indices_y_bin(yi, balance_seed + 100_003 * i)
+            xi = x_tr[idx]
+            yi_fit = yi[idx]
+            print(
+                f"  [SVM train balanced] {F1_CLASS_NAMES[i]}: n={len(idx)} "
+                f"pos={int(yi_fit.sum())} neg={int(len(yi_fit) - yi_fit.sum())}",
+                flush=True,
+            )
+        else:
+            xi = x_tr
+            yi_fit = yi
         p = make_pipeline(
             StandardScaler(),
-            SVC(kernel="rbf", C=10.0, gamma="scale", class_weight="balanced"),
+            SVC(kernel="rbf", C=c, gamma="scale", class_weight="balanced"),
         )
-        p.fit(x_tr, y_tr[:, i])
+        p.fit(xi, yi_fit)
         heads.append(SVMHead(pipe=p))
     return heads
 
 
-def _svm_scores(heads: List[SVMHead], x: np.ndarray) -> np.ndarray:
-    out = np.zeros((x.shape[0], len(heads)), dtype=np.float64)
+def _svm_scores(heads: List[SVMHead], x: Union[np.ndarray, List[np.ndarray]]) -> np.ndarray:
+    if isinstance(x, list):
+        n = x[0].shape[0]
+    else:
+        n = x.shape[0]
+    out = np.zeros((n, len(heads)), dtype=np.float64)
     for i, h in enumerate(heads):
-        out[:, i] = h.pipe.decision_function(x)
+        xi = x[i] if isinstance(x, list) else x
+        out[:, i] = h.pipe.decision_function(xi)
     return out
 
 
@@ -169,17 +245,74 @@ def main() -> None:
     ap.add_argument("--csv", default="SEP-28k-Extended_clips.csv")
     ap.add_argument("--data-root", default="data/sep28k/clips")
     ap.add_argument("--split-column", default="SEP28k-T")
-    ap.add_argument("--label-vote-threshold", type=int, default=2)
+    ap.add_argument(
+        "--label-vote-threshold",
+        type=int,
+        default=3,
+        help="SEP-28k-Extended: present when vote count >= this (3 = unanimous).",
+    )
     ap.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--w2v2-name", default="facebook/wav2vec2-base-960h")
-    ap.add_argument("--layer", type=int, default=8)
+    ap.add_argument(
+        "--layer",
+        type=int,
+        default=8,
+        help="Legacy mode: single W2V2 layer index.",
+    )
+    ap.add_argument(
+        "--svm-head-config-json",
+        default="",
+        help=(
+            "svm_clean03_layer_prosody_sweep JSON (per-head layer, C). "
+            "Empty: use file if it exists, else legacy single-layer SVM."
+        ),
+    )
+    ap.add_argument(
+        "--svm-legacy-single-layer",
+        action="store_true",
+        help="768-D embedding from --layer only; C=10 per head.",
+    )
+    ap.add_argument("--prosody-cache-dir", default=".cache/prosody_features")
+    ap.add_argument("--refresh-prosody-cache", action="store_true")
     ap.add_argument("--embedding-cache-dir", default=".cache/w2v2_embeddings")
     ap.add_argument("--zhang-full-cache-dir", default="")
     ap.add_argument("--max-train", type=int, default=0)
     ap.add_argument("--max-dev", type=int, default=0)
     ap.add_argument("--max-test", type=int, default=0)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--no-balance-svm-train",
+        action="store_true",
+        help="Train each head SVM on all train rows (default: 50/50 pos/neg per head).",
+    )
+    ap.add_argument(
+        "--block-natural-pause-v2",
+        action="store_true",
+        default=True,
+        help=(
+            "Record that compare_rules_svm_hybrid.py uses Block natural-pause v2 replacement "
+            "by default (metadata only in this thresholds artifact)."
+        ),
+    )
+    ap.add_argument(
+        "--no-block-natural-pause-v2",
+        action="store_false",
+        dest="block_natural_pause_v2",
+        help="Record Block natural-pause v2 as disabled in thresholds metadata.",
+    )
+    ap.add_argument(
+        "--block-np-quantile",
+        type=float,
+        default=0.80,
+        help="Block natural-pause v2 quantile metadata for reproducibility.",
+    )
+    ap.add_argument(
+        "--block-np-c",
+        type=float,
+        default=0.10,
+        help="Block natural-pause v2 SVC C metadata for reproducibility.",
+    )
     ap.add_argument(
         "--thresholds-out",
         default="artifacts/tuned_thresholds_rules_svm.json",
@@ -192,6 +325,33 @@ def main() -> None:
 
     dev = _pick_device(args.device)
     print(f"Using device: {dev}", flush=True)
+
+    explicit_json = (args.svm_head_config_json or "").strip()
+    if args.svm_legacy_single_layer:
+        use_per_head = False
+        head_json = ""
+    elif explicit_json:
+        use_per_head = True
+        head_json = explicit_json
+        if not os.path.isfile(head_json):
+            raise SystemExit(f"Missing --svm-head-config-json file: {head_json!r}")
+    else:
+        head_json = DEFAULT_SVM_HEAD_JSON
+        use_per_head = os.path.isfile(head_json)
+        if use_per_head:
+            print(f"SVM: per-head W2V2+prosody from {head_json}", flush=True)
+        else:
+            print(
+                f"[Info] {DEFAULT_SVM_HEAD_JSON!r} not found; SVM uses legacy "
+                f"single layer={args.layer}.",
+                flush=True,
+            )
+
+    layers_t: Optional[Tuple[int, int, int, int]] = None
+    c_list: Optional[List[float]] = None
+    if use_per_head:
+        layers_t, c_t, _pd = load_svm_clean03_head_bundle(head_json)
+        c_list = list(c_t)
 
     cfg = Config()
     cfg.label_csv = args.csv
@@ -213,49 +373,92 @@ def main() -> None:
     tr_recs = _to_records(tp, tl, "train")
     dv_recs = _to_records(vp, vl, "val")
     te_recs = _to_records(ep, el, "test")
-    x_tr, y_tr = extract_embeddings(
-        tr_recs,
-        args.w2v2_name,
-        args.layer,
-        args.batch_size,
-        dev,
-        args.embedding_cache_dir.strip(),
-    )
-    x_dv, y_dv = extract_embeddings(
-        dv_recs,
-        args.w2v2_name,
-        args.layer,
-        args.batch_size,
-        dev,
-        args.embedding_cache_dir.strip(),
-    )
-    x_te, y_te = extract_embeddings(
-        te_recs,
-        args.w2v2_name,
-        args.layer,
-        args.batch_size,
-        dev,
-        args.embedding_cache_dir.strip(),
-    )
-    svm_heads = _fit_svm_heads(x_tr, y_tr)
-    svm_dv_scores = _svm_scores(svm_heads, x_dv)
-    svm_te_scores = _svm_scores(svm_heads, x_te)
+    if use_per_head:
+        assert layers_t is not None and c_list is not None
+        x_tr, y_tr = extract_per_head_w2v2_prosody(
+            tr_recs,
+            args.w2v2_name,
+            layers_t,
+            args.batch_size,
+            dev,
+            args.embedding_cache_dir.strip(),
+            cfg.sample_rate,
+            args.prosody_cache_dir.strip(),
+            args.refresh_prosody_cache,
+        )
+        x_dv, y_dv = extract_per_head_w2v2_prosody(
+            dv_recs,
+            args.w2v2_name,
+            layers_t,
+            args.batch_size,
+            dev,
+            args.embedding_cache_dir.strip(),
+            cfg.sample_rate,
+            args.prosody_cache_dir.strip(),
+            args.refresh_prosody_cache,
+        )
+        x_te, y_te = extract_per_head_w2v2_prosody(
+            te_recs,
+            args.w2v2_name,
+            layers_t,
+            args.batch_size,
+            dev,
+            args.embedding_cache_dir.strip(),
+            cfg.sample_rate,
+            args.prosody_cache_dir.strip(),
+            args.refresh_prosody_cache,
+        )
+        svm_heads = _fit_svm_heads(
+            x_tr,
+            y_tr,
+            c_per_head=c_list,
+            balance_train=not args.no_balance_svm_train,
+            balance_seed=int(args.seed),
+        )
+        svm_dv_scores = _svm_scores(svm_heads, x_dv)
+        svm_te_scores = _svm_scores(svm_heads, x_te)
+    else:
+        x_tr, y_tr = extract_embeddings(
+            tr_recs,
+            args.w2v2_name,
+            args.layer,
+            args.batch_size,
+            dev,
+            args.embedding_cache_dir.strip(),
+        )
+        x_dv, y_dv = extract_embeddings(
+            dv_recs,
+            args.w2v2_name,
+            args.layer,
+            args.batch_size,
+            dev,
+            args.embedding_cache_dir.strip(),
+        )
+        x_te, y_te = extract_embeddings(
+            te_recs,
+            args.w2v2_name,
+            args.layer,
+            args.batch_size,
+            dev,
+            args.embedding_cache_dir.strip(),
+        )
+        svm_heads = _fit_svm_heads(
+            x_tr,
+            y_tr,
+            balance_train=not args.no_balance_svm_train,
+            balance_seed=int(args.seed),
+        )
+        svm_dv_scores = _svm_scores(svm_heads, x_dv)
+        svm_te_scores = _svm_scores(svm_heads, x_te)
     svm_th = _tune_thresholds_scores(y_dv, svm_dv_scores)
     svm_te_bin = _apply_thresholds(svm_te_scores, svm_th)
     m_svm = compute_f1_metrics(y_te.astype(np.float64), svm_te_bin.astype(np.float64), 0.5)
 
-    # Rules side (zhang and zhang_full)
-    zhang_mod = ZhangStyleRuleLogits(sample_rate=cfg.sample_rate).to(dev).eval()
+    # Rules side (zhang_full only; naive zhang removed)
     zfull_mod = ZhangFullRuleLogits(
         sample_rate=cfg.sample_rate,
         cache_dir=(args.zhang_full_cache_dir.strip() or None),
     ).to(dev).eval()
-
-    z_dv = _collect_rule_probs(cfg, vp, vl, zhang_mod, dev, args.batch_size)
-    z_te = _collect_rule_probs(cfg, ep, el, zhang_mod, dev, args.batch_size)
-    z_th = _tune_thresholds_probs(np.asarray(vl), z_dv)
-    z_te_bin = _apply_thresholds(z_te, z_th)
-    m_zhang = compute_f1_metrics(np.asarray(el), z_te_bin.astype(np.float64), 0.5)
 
     zf_dv = _collect_rule_probs(cfg, vp, vl, zfull_mod, dev, args.batch_size)
     zf_te = _collect_rule_probs(cfg, ep, el, zfull_mod, dev, args.batch_size)
@@ -265,12 +468,10 @@ def main() -> None:
 
     print("\nTuned thresholds (per head):", flush=True)
     print(f"SVM score threshold:        {_fmt_head_thresholds(svm_th)}", flush=True)
-    print(f"Rules zhang prob threshold: {_fmt_head_thresholds(z_th)}", flush=True)
     print(f"Rules zfull prob threshold: {_fmt_head_thresholds(zf_th)}", flush=True)
 
     print("\nTest metrics with tuned thresholds:", flush=True)
     print(f"SVM (tuned):        {format_f1_metrics(m_svm)}", flush=True)
-    print(f"Rules zhang (tuned):{format_f1_metrics(m_zhang)}", flush=True)
     print(f"Rules zfull (tuned):{format_f1_metrics(m_zfull)}", flush=True)
 
     out_fp = (args.thresholds_out or "").strip()
@@ -280,18 +481,57 @@ def main() -> None:
             os.makedirs(out_dir, exist_ok=True)
         payload = {
             "split_column": args.split_column,
+            "label_csv": os.path.basename(args.csv),
             "label_vote_threshold": int(args.label_vote_threshold),
             "seed": int(args.seed),
+            "metrics_evaluated_on_split": "test",
+            "threshold_tuned_on_split": "dev",
+            "svm_trained_on_split": "train",
+            "subsample_caps": {
+                "max_train": int(args.max_train),
+                "max_dev": int(args.max_dev),
+                "max_test": int(args.max_test),
+            },
+            "subsample_seeds": {
+                "train": int(args.seed) + 1,
+                "dev": int(args.seed) + 2,
+                "test": int(args.seed) + 3,
+            },
+            "svm_train_balanced_per_head": not bool(args.no_balance_svm_train),
+            "svm_train_balance_seed": int(args.seed),
+            "block_natural_pause_v2": {
+                "enabled_by_default_in_compare": bool(args.block_natural_pause_v2),
+                "pause_neg_quantile": float(args.block_np_quantile),
+                "svm_C": float(args.block_np_c),
+                "notes": (
+                    "This thresholds file stores metadata for Block natural-pause v2. "
+                    "The Block-v2 decision threshold is learned internally in compare_rules_svm_hybrid.py."
+                ),
+            },
             "heads": list(F1_CLASS_NAMES),
+            "svm_feature_mode": (
+                "per_head_w2v2_prosody" if use_per_head else "single_layer_w2v2"
+            ),
+            "svm_head_config_json": (
+                os.path.abspath(head_json) if use_per_head and head_json else ""
+            ),
             "svm_score_thresholds": {
                 k: float(v) for k, v in zip(F1_CLASS_NAMES, svm_th)
-            },
-            "rules_zhang_prob_thresholds": {
-                k: float(v) for k, v in zip(F1_CLASS_NAMES, z_th)
             },
             "rules_zhang_full_prob_thresholds": {
                 k: float(v) for k, v in zip(F1_CLASS_NAMES, zf_th)
             },
+        }
+        if use_per_head and layers_t is not None and c_list is not None:
+            payload["per_head_layers"] = {
+                k: int(v) for k, v in zip(F1_CLASS_NAMES, layers_t)
+            }
+            payload["per_head_C"] = {
+                k: float(v) for k, v in zip(F1_CLASS_NAMES, c_list)
+            }
+        payload["test_metrics_tuned_thresholds"] = {
+            "svm_f1": {k: float(v) for k, v in m_svm.items()},
+            "rules_zhang_full_f1": {k: float(v) for k, v in m_zfull.items()},
         }
         with open(out_fp, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
