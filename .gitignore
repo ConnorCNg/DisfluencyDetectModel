@@ -24,6 +24,9 @@ __pycache__/
 # Optional local run outputs (not used in README commands)
 artifacts/smoke/
 
+# Optional local verify bundle (bash scripts/run_readme_verify_suite.sh)
+artifacts/verify_run/
+
 # 3 s clip tree (large); same pattern as sep28k/clips
 data/SEP-28k_CLIP/
 

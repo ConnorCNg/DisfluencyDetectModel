@@ -30,6 +30,16 @@ You need `SEP-28k-Extended_clips.csv` at repo root and the wavs under those fold
 - Block pause features: `.cache/block_pause_features/` (same idea: per path).
 - `disfluency_pipeline.py` training can use `--audio-feature-cache-dir` for its own frozen features; that is **not** the same cache as the SVM pipeline above.
 
+## Optional: one-shot verify (local only)
+
+`artifacts/verify_run/` is gitignored. From repo root, after you have both clip trees and caches warmed:
+
+```bash
+bash scripts/run_readme_verify_suite.sh
+```
+
+That reruns the README commands (no `--refresh-*` flags), runs BiLSTM with **128 clips per split and 3 epochs** instead of a full 20-epoch pass, then writes `artifacts/verify_run/README_verify_summary.md` and prints the same tables to stdout. For numbers that match the paper README exactly, use the same caps as in the copy-paste blocks above for BiLSTM.
+
 Practical order: run `tune_thresholds_rules_svm.py` once per root you care about with `--max-train 0 --max-dev 0 --max-test 0` first so later scripts mostly hit disk cache. Old layer-8-only code mostly adds missing layer-8 `.npy` files if the mainline run already filled other layers.
 
 ---
