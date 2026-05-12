@@ -21,7 +21,7 @@ __pycache__/
 # Heavy derived caches (regenerate: see artifacts/REGENERATE_CACHES.txt)
 .cache/
 
-# Local smoke-test outputs (bash scripts/smoke_ling230_pipelines.sh)
+# Optional local run outputs (not used in README commands)
 artifacts/smoke/
 
 # 3 s clip tree (large); same pattern as sep28k/clips
